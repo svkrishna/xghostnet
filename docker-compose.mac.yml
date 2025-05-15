@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  ghostnet:
+    build:
+      context: .
+      dockerfile: Dockerfile.mac
+    platform: linux/amd64
+    privileged: true  # Required for SDR device access
+    devices:
+      - /dev/bus/usb:/dev/bus/usb  # USB device access
+    volumes:
+      - ./config:/app/config  # Mount config directory
+      - ./data:/app/data      # Mount data directory
+    ports:
+      - "5000:5000"  # Mesh networking port
+      - "8000:8000"  # Web interface port
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SOAPY_SDR_ROOT=/usr/lib/SoapySDR/modules0.8
+      - UHD_IMAGES_DIR=/usr/share/uhd/images
+      - PYTHONPATH=/app
+      - SDRPLAY_API_PATH=/usr/lib/libsdrplay_api.so
+    restart: unless-stopped
+    networks:
+      - ghostnet_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  ghostnet_net:
+    driver: bridge 

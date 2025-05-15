@@ -1,0 +1,40 @@
+{
+    "system": {
+        "name": "GhostNet",
+        "version": "0.1.0",
+        "log_level": "INFO"
+    },
+    "hardware": {
+        "sdr": {
+            "sample_rate": 2400000,
+            "center_freq": 70000000,
+            "gain": 40,
+            "bandwidth": 2000000
+        }
+    },
+    "processing": {
+        "fft_size": 1024,
+        "overlap": 512,
+        "processing_interval": 0.1,
+        "feature_extraction": {
+            "spectral_entropy": true,
+            "peak_detection": true,
+            "doppler_analysis": true
+        }
+    },
+    "mesh": {
+        "sync_interval": 1.0,
+        "node_timeout": 5.0,
+        "min_nodes_triangulation": 3
+    },
+    "classification": {
+        "model_path": "models/rf_classifier.pth",
+        "confidence_threshold": 0.7,
+        "classes": ["drone", "vehicle", "human", "unknown"]
+    },
+    "storage": {
+        "data_dir": "data",
+        "log_dir": "logs",
+        "max_storage_gb": 10
+    }
+} 

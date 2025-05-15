@@ -1,0 +1,57 @@
+# Core dependencies
+numpy>=1.21.0
+psutil>=5.9.0
+dataclasses; python_version < "3.7"
+
+# SDR Hardware Support
+pyrtlsdr>=0.2.93          # RTL-SDR support
+SoapySDR>=0.8.0          # Unified SDR interface layer
+pyadi-iio>=0.0.19        # Analog Devices PlutoSDR interface
+pylibiio>=0.25           # IIO library for PlutoSDR
+pyusb>=1.2.1             # USB access for SDR devices
+
+# Optional Dependencies
+matplotlib>=3.5.0        # For waveform visualization
+scipy>=1.7.0            # Signal processing utilities
+
+# Development Dependencies
+pytest>=7.0.0           # Testing framework
+pytest-cov>=3.0.0       # Test coverage reporting
+black>=22.0.0           # Code formatting
+flake8>=4.0.0           # Code linting
+mypy>=0.950            # Type checking
+
+# Machine learning
+torch>=2.0.0
+torchvision>=0.15.0
+scikit-learn>=0.24.0
+
+# Web interface
+fastapi>=0.68.0
+uvicorn>=0.15.0
+python-multipart>=0.0.5
+pydantic>=1.8.0
+jinja2>=3.0.0
+aiofiles>=0.7.0
+
+# Database and storage
+sqlalchemy>=1.4.0
+tinydb>=4.5.0
+alembic>=1.7.0
+
+# Visualization
+plotly>=5.3.0
+folium>=0.12.0
+
+# Utilities
+python-dotenv>=0.19.0
+pyyaml>=5.4.0
+tqdm>=4.62.0
+colorama>=0.4.4
+
+# Testing
+pytest-asyncio>=0.16.0
+
+# Development
+isort>=5.9.0
+mypy>=0.910 

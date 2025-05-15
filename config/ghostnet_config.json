@@ -1,0 +1,67 @@
+{
+    "signal_processor": {
+        "sample_rate": 2000000,
+        "fft_size": 1024,
+        "window_type": "hann",
+        "overlap": 0.5
+    },
+    "model": {
+        "path": "data/models/signal_classifier.pt",
+        "input_size": 6,
+        "hidden_size": 64,
+        "num_classes": 3
+    },
+    "sdr_devices": {
+        "primary": {
+            "type": "rtlsdr",
+            "center_freq": 2400000000,
+            "sample_rate": 2000000,
+            "gain": 20.0,
+            "bandwidth": 2000000,
+            "device_args": {
+                "device_index": 0
+            }
+        },
+        "secondary": {
+            "type": "rtlsdr",
+            "center_freq": 2400000000,
+            "sample_rate": 2000000,
+            "gain": 20.0,
+            "bandwidth": 2000000,
+            "device_args": {
+                "device_index": 1
+            }
+        }
+    },
+    "mesh": {
+        "node_id": "node1",
+        "position": [0.0, 0.0, 0.0],
+        "port": 5000,
+        "sync_interval": 1.0,
+        "heartbeat_interval": 5.0
+    },
+    "triangulation": {
+        "min_receivers": 3,
+        "max_distance": 1000.0,
+        "confidence_threshold": 0.7,
+        "history_size": 100
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "ghostnet.log",
+        "max_size": 10485760,
+        "backup_count": 5
+    },
+    "storage": {
+        "detection_path": "data/detections",
+        "location_path": "data/locations",
+        "max_storage_size": 1073741824
+    },
+    "visualization": {
+        "update_interval": 0.1,
+        "map_center": [0.0, 0.0],
+        "map_zoom": 15,
+        "heatmap_radius": 50,
+        "trail_length": 100
+    }
+} 

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  ghostnet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ghostnet
+    restart: unless-stopped
+    privileged: true  # Required for USB device access
+    devices:
+      - /dev/bus/usb:/dev/bus/usb  # USB device passthrough
+    volumes:
+      - ./config:/app/config  # Configuration files
+      - ./data:/app/data      # Data storage
+      - /var/run/udev:/var/run/udev:ro  # udev access for device management
+    ports:
+      - "8000:8000"  # Web interface
+      - "5000:5000"  # Mesh networking
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+      - SOAPY_SDR_ROOT=/usr/lib/SoapySDR/modules0.8
+      - UHD_IMAGES_DIR=/usr/share/uhd/images
+    networks:
+      - ghostnet_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  ghostnet_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16 

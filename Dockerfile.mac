@@ -1,0 +1,86 @@
+# Base stage for building dependencies
+FROM python:3.9-slim-bullseye as builder
+
+# Set platform to AMD64
+ENV DOCKER_DEFAULT_PLATFORM=linux/amd64
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    libusb-1.0-0-dev \
+    libsoapysdr-dev \
+    librtlsdr-dev \
+    libuhd-dev \
+    libiio-dev \
+    libairspy-dev \
+    libhackrf-dev \
+    libbladerf-dev \
+    liblimesuite-dev \
+    libsdrplay-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Final stage
+FROM python:3.9-slim-bullseye
+
+# Set platform to AMD64
+ENV DOCKER_DEFAULT_PLATFORM=linux/amd64
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libusb-1.0-0 \
+    soapysdr \
+    soapysdr-module-rtlsdr \
+    soapysdr-module-hackrf \
+    soapysdr-module-bladerf \
+    soapysdr-module-uhd \
+    soapysdr-module-limesdr \
+    soapysdr-module-airspy \
+    soapysdr-module-sdrplay \
+    soapysdr-module-plutosdr \
+    rtl-sdr \
+    uhd-host \
+    libiio0 \
+    libairspy0 \
+    libhackrf0 \
+    libbladerf2 \
+    liblimesuite20.10-1 \
+    libsdrplay0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non-root user
+RUN useradd -m -s /bin/bash ghostnet
+USER ghostnet
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY --chown=ghostnet:ghostnet src/ /app/src/
+COPY --chown=ghostnet:ghostnet config/ /app/config/
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV SOAPY_SDR_ROOT=/usr/lib/SoapySDR/modules0.8
+ENV UHD_IMAGES_DIR=/usr/share/uhd/images
+
+# Expose ports for mesh networking and web interface
+EXPOSE 5000 8000
+
+# Set entrypoint
+ENTRYPOINT ["python", "src/main.py"]
+CMD ["--config", "config/ghostnet_config.json"] 
