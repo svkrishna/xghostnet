@@ -12,9 +12,11 @@
     "@types/react-dom": "^18.2.19",
     "@types/react-plotly.js": "^2.6.3",
     "@types/socket.io-client": "^3.0.0",
+    "leaflet": "^1.9.4",
     "plotly.js-dist-min": "^2.29.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-leaflet": "^5.0.0",
     "react-plotly.js": "^2.6.0",
     "react-scripts": "5.0.1",
     "socket.io-client": "^4.7.4",
@@ -43,5 +45,10 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@types/axios": "^0.9.36",
+    "@types/leaflet": "^1.9.18",
+    "@types/react-leaflet": "^2.8.3"
   }
 }

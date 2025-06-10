@@ -57,6 +57,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 import base64
+from .signal_geolocator import SignalGeolocator
 
 # Import SDR modules
 try:
@@ -1581,6 +1582,8 @@ class SignalClassifier:
         # Initialize API server
         self.api = SignalClassifierAPI(self)
         
+        self.geolocator = SignalGeolocator()
+        
     def _create_model(self, model_type: str) -> Any:
         """Create a new model instance."""
         if model_type == 'rf':
@@ -2658,60 +2661,61 @@ class SignalClassifier:
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 8000) -> None:
         """Start the API server."""
-        self.api.start(host, port)
+        import uvicorn
+        from ..api.main import app
+        uvicorn.run(app, host=host, port=port)
+
+    
+            
+    
+            
+   
+            
+   
 
 class WebSocketManager:
     """Manages WebSocket connections for real-time streaming."""
     
     def __init__(self, sdr_manager: SDRManager):
-        self.active_connections: Set[WebSocket] = set()
-        self.streaming_tasks: Dict[str, asyncio.Task] = {}
         self.sdr_manager = sdr_manager
-        
+        self.active_connections: List[WebSocket] = []
+        self.streaming_tasks: Dict[str, asyncio.Task] = {}
+
     async def connect(self, websocket: WebSocket) -> None:
-        """Connect a new WebSocket client."""
         await websocket.accept()
-        self.active_connections.add(websocket)
-        
+        self.active_connections.append(websocket)
+
     def disconnect(self, websocket: WebSocket) -> None:
-        """Disconnect a WebSocket client."""
         self.active_connections.remove(websocket)
-        
+
     async def broadcast(self, message: str) -> None:
-        """Broadcast message to all connected clients."""
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
-            except WebSocketDisconnect:
-                self.disconnect(connection)
-                
+            except Exception:
+                self.active_connections.remove(connection)
+
     async def stream_samples(self, device_id: str, num_samples: int = 1024) -> None:
-        """Stream samples from a device to all connected clients."""
         while True:
             try:
                 samples = self.sdr_manager.read_samples(device_id, num_samples)
                 if samples is not None:
-                    # Convert samples to JSON-serializable format
-                    data = {
-                        'device_id': device_id,
-                        'timestamp': time.time(),
-                        'samples': samples.tolist()
-                    }
-                    await self.broadcast(json.dumps(data))
-                await asyncio.sleep(0.1)  # 100ms delay
+                    await self.broadcast(json.dumps({
+                        "device_id": device_id,
+                        "samples": samples.tolist()
+                    }))
+                await asyncio.sleep(0.1)
             except Exception as e:
-                logging.error(f"Error streaming samples: {str(e)}")
-                await asyncio.sleep(1.0)
-                
+                logger.error(f"Error streaming samples: {e}")
+                break
+
     def start_streaming(self, device_id: str) -> None:
-        """Start streaming from a device."""
         if device_id not in self.streaming_tasks:
             self.streaming_tasks[device_id] = asyncio.create_task(
                 self.stream_samples(device_id)
             )
-            
+
     def stop_streaming(self, device_id: str) -> None:
-        """Stop streaming from a device."""
         if device_id in self.streaming_tasks:
             self.streaming_tasks[device_id].cancel()
             del self.streaming_tasks[device_id]
@@ -2886,58 +2890,9 @@ class SignalClassifierAPI:
                 
             return self.device_manager.get_discovered_devices()
             
-        @self.app.post("/discovery/register")
-        async def register_device_discovery(
-            name: str,
-            port: int,
-            properties: Dict[str, str],
-            token: str = Depends(self.security_manager.oauth2_scheme)
-        ):
-            """Register this device for discovery."""
-            payload = self.security_manager.verify_token(token)
-            if not payload or payload["role"] not in ["admin", "device"]:
-                raise HTTPException(status_code=403, detail="Not authorized")
-                
-            self.device_manager.register_device(name, port, properties)
-            return {"success": True}
+        
             
-        @self.app.post("/discovery/connect")
-        async def connect_to_device_discovery(
-            device_name: str,
-            token: str = Depends(self.security_manager.oauth2_scheme)
-        ):
-            """Connect to a discovered device."""
-            payload = self.security_manager.verify_token(token)
-            if not payload or payload["role"] not in ["admin", "operator"]:
-                raise HTTPException(status_code=403, detail="Not authorized")
-                
-            devices = self.device_manager.get_discovered_devices()
-            if device_name not in devices:
-                return {"error": "Device not found"}
-                
-            device_info = devices[device_name]
-            try:
-                # Create connection to remote device
-                config = SDRConfig(
-                    center_freq=float(device_info['properties'].get('center_freq', 100e6)),
-                    sample_rate=float(device_info['properties'].get('sample_rate', 2.4e6)),
-                    gain=float(device_info['properties'].get('gain', 40)),
-                    bandwidth=float(device_info['properties'].get('bandwidth', 2.4e6)),
-                    device_args={
-                        'address': device_info['address'],
-                        'port': device_info['port']
-                    }
-                )
-                
-                success = self.classifier.add_sdr_device(
-                    device_name,
-                    device_info['properties'].get('type', 'rtlsdr'),
-                    config
-                )
-                
-                return {"success": success}
-            except Exception as e:
-                return {"error": str(e)}
+
                 
         @self.app.websocket("/ws/{device_id}")
         async def websocket_endpoint(websocket: WebSocket, device_id: str, token: str):
@@ -3059,6 +3014,86 @@ class SignalClassifierAPI:
                 return {"success": success}
             except Exception as e:
                 return {"error": str(e)}
+            
+        @self.app.post("/geolocation/register")
+        async def register_device_location(
+            device_id: str,
+            latitude: float,
+            longitude: float,
+            signal_strength: float,
+            token: str = Depends(self.security_manager.oauth2_scheme)
+        ):
+            try:
+                self.classifier.geolocator.add_device_location(
+                    device_id=device_id,
+                    latitude=latitude,
+                    longitude=longitude,
+                    signal_strength=signal_strength,
+                    timestamp=time.time()
+                )
+                return {"status": "success", "message": "Device location registered"}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/geolocation/estimate")
+        async def estimate_position(
+            signal_strengths: Dict[str, float],
+            token: str = Depends(self.security_manager.oauth2_scheme)
+        ):
+            try:
+                position = self.classifier.geolocator.estimate_position(
+                    signal_strengths=signal_strengths,
+                    timestamp=time.time()
+                )
+                if position:
+                    lat, lon, uncertainty = position
+                    return {
+                        "status": "success",
+                        "position": {
+                            "latitude": lat,
+                            "longitude": lon,
+                            "uncertainty": uncertainty
+                        }
+                    }
+                return {
+                    "status": "error",
+                    "message": "Insufficient data for position estimation"
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/geolocation/devices")
+        async def get_known_devices(
+            token: str = Depends(self.security_manager.oauth2_scheme)
+        ):
+            try:
+                devices = self.classifier.geolocator.get_known_devices()
+                return {
+                    "status": "success",
+                    "devices": [
+                        {
+                            "device_id": d.device_id,
+                            "latitude": d.latitude,
+                            "longitude": d.longitude,
+                            "signal_strength": d.signal_strength,
+                            "timestamp": d.timestamp
+                        }
+                        for d in devices
+                    ]
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete("/geolocation/devices/{device_id}")
+        async def remove_device_location(
+            device_id: str,
+            token: str = Depends(self.security_manager.oauth2_scheme)
+        ):
+            try:
+                self.classifier.geolocator.remove_device_location(device_id)
+                return {"status": "success", "message": "Device location removed"}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
             
     def start(self, host: str = "0.0.0.0", port: int = 8000) -> None:
         """Start the API server."""

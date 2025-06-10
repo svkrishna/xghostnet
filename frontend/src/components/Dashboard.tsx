@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Box, Drawer, AppBar, Toolbar, Typography, List, ListItem, ListItemIcon, ListItemText, IconButton, CssBaseline } from '@mui/material';
-import { Menu as MenuIcon, SignalCellularAlt, Settings, Storage, Devices } from '@mui/icons-material';
+import { Menu as MenuIcon, SignalCellularAlt, Settings, Storage, Devices, LocationOn } from '@mui/icons-material';
 import SpectrumVisualizer from './SpectrumVisualizer';
 import SignalRecorder from './SignalRecorder';
 import DeviceMonitor from './DeviceMonitor';
 import ConfigManager from './ConfigManager';
+import GeolocationMap from './GeolocationMap';
 
 const drawerWidth = 240;
 
@@ -20,6 +21,7 @@ const Dashboard: React.FC = () => {
     { text: 'Spectrum View', icon: <SignalCellularAlt />, view: 'spectrum' },
     { text: 'Signal Recorder', icon: <Storage />, view: 'recorder' },
     { text: 'Device Monitor', icon: <Devices />, view: 'devices' },
+    { text: 'Geolocation', icon: <LocationOn />, view: 'geolocation' },
     { text: 'Configuration', icon: <Settings />, view: 'config' },
   ];
 
@@ -50,6 +52,8 @@ const Dashboard: React.FC = () => {
         return <SignalRecorder />;
       case 'devices':
         return <DeviceMonitor />;
+      case 'geolocation':
+        return <GeolocationMap />;
       case 'config':
         return <ConfigManager />;
       default:
