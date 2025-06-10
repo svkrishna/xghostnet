@@ -1,0 +1,59 @@
+/* Global styles */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f5f5f5;
+}
+
+/* Dashboard layout */
+.dashboard-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Component styles */
+.component-container {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+/* Spectrum visualization */
+.spectrum-container {
+  height: 500px;
+  width: 100%;
+}
+
+/* Device monitor table */
+.device-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.device-table th,
+.device-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+/* Configuration form */
+.config-form {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .component-container {
+    padding: 15px;
+  }
+  
+  .spectrum-container {
+    height: 300px;
+  }
+} 
