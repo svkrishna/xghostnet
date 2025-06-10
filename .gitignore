@@ -107,4 +107,30 @@ build/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Node.js / React
+node_modules/
+/frontend/node_modules
+/frontend/build
+/frontend/.env
+/frontend/.env.local
+/frontend/.env.development.local
+/frontend/.env.test.local
+/frontend/.env.production.local
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+/frontend/.pnp
+/frontend/.pnp.js
+/frontend/coverage
+/frontend/.DS_Store
+
+# Local development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python-related entries
+.python-version 
