@@ -41,6 +41,14 @@ class SignalGeolocator:
         self.fingerprinting_model = None
         self.kernel = C(1.0, (1e-3, 1e3)) * RBF([1.0], (1e-2, 1e2))
         
+        # Propagation model parameters
+        self.propagation_models = {
+            'free_space': self._free_space_path_loss,
+            'two_ray': self._two_ray_path_loss,
+            'log_distance': self._log_distance_path_loss,
+            'okumura_hata': self._okumura_hata_path_loss
+        }
+        
     def add_device_location(self, device_id: str, latitude: float, longitude: float, 
                           signal_strength: float, timestamp: float) -> None:
         """Add or update a device's known location."""
@@ -69,14 +77,25 @@ class SignalGeolocator:
         """Remove a signal fingerprint."""
         self.fingerprints = [f for f in self.fingerprints if f.location_id != location_id]
         
-    def _calculate_distance(self, signal_strength: float, reference_strength: float) -> float:
-        """Calculate approximate distance based on signal strength difference.
+    def _calculate_distance(self, signal_strength: float, reference_strength: float, 
+                          path_loss_exponent: float = 2.0) -> float:
+        """Calculate distance using log-distance path loss model.
         
-        Uses the inverse square law for signal propagation:
-        distance = reference_distance * 10^((reference_strength - signal_strength)/(20))
+        Args:
+            signal_strength: Received signal strength in dBm
+            reference_strength: Reference signal strength at 1m in dBm
+            path_loss_exponent: Path loss exponent (n)
+            
+        Returns:
+            Estimated distance in meters
         """
-        # Assuming reference_distance of 1 meter and reference_strength at that distance
-        return 10 ** ((reference_strength - signal_strength) / 20)
+        # Guard against extremely weak signals
+        if signal_strength < -100:  # dBm threshold
+            return float('inf')
+            
+        # Log-distance path loss model
+        distance = 10 ** ((reference_strength - signal_strength) / (10 * path_loss_exponent))
+        return max(distance, 0.1)  # Minimum distance of 0.1m
     
     def _triangulate_position(self, device_locations: List[DeviceLocation]) -> Tuple[float, float]:
         """Triangulate position using multiple known device locations."""
@@ -203,17 +222,205 @@ class SignalGeolocator:
         """Get all signal fingerprints."""
         return self.fingerprints
         
+    def _free_space_path_loss(self, distance: float, frequency: float = 2.4e9) -> float:
+        """Free space path loss model.
+        
+        Args:
+            distance: Distance in meters
+            frequency: Frequency in Hz (default: 2.4 GHz)
+            
+        Returns:
+            Path loss in dB
+        """
+        wavelength = 3e8 / frequency
+        return 20 * np.log10(4 * np.pi * distance / wavelength)
+        
+    def _two_ray_path_loss(self, distance: float, tx_height: float = 1.5, 
+                          rx_height: float = 1.5, frequency: float = 2.4e9) -> float:
+        """Two-ray ground reflection model.
+        
+        Args:
+            distance: Distance in meters
+            tx_height: Transmitter height in meters
+            rx_height: Receiver height in meters
+            frequency: Frequency in Hz
+            
+        Returns:
+            Path loss in dB
+        """
+        wavelength = 3e8 / frequency
+        d_cross = 4 * np.pi * tx_height * rx_height / wavelength
+        
+        if distance < d_cross:
+            return self._free_space_path_loss(distance, frequency)
+        else:
+            return 40 * np.log10(distance) - 20 * np.log10(tx_height) - 20 * np.log10(rx_height)
+            
+    def _log_distance_path_loss(self, distance: float, reference_distance: float = 1.0,
+                              path_loss_exponent: float = 2.0, frequency: float = 2.4e9) -> float:
+        """Log-distance path loss model.
+        
+        Args:
+            distance: Distance in meters
+            reference_distance: Reference distance in meters
+            path_loss_exponent: Path loss exponent
+            frequency: Frequency in Hz
+            
+        Returns:
+            Path loss in dB
+        """
+        pl0 = self._free_space_path_loss(reference_distance, frequency)
+        return pl0 + 10 * path_loss_exponent * np.log10(distance / reference_distance)
+        
+    def _okumura_hata_path_loss(self, distance: float, frequency: float = 2.4e9,
+                               tx_height: float = 30, rx_height: float = 1.5,
+                               environment: str = 'urban') -> float:
+        """Okumura-Hata path loss model.
+        
+        Args:
+            distance: Distance in kilometers
+            frequency: Frequency in MHz
+            tx_height: Transmitter height in meters
+            rx_height: Receiver height in meters
+            environment: Environment type ('urban', 'suburban', 'rural')
+            
+        Returns:
+            Path loss in dB
+        """
+        # Convert frequency to MHz
+        freq_mhz = frequency / 1e6
+        
+        # Calculate base path loss
+        a_hr = (1.1 * np.log10(freq_mhz) - 0.7) * rx_height - (1.56 * np.log10(freq_mhz) - 0.8)
+        pl = 69.55 + 26.16 * np.log10(freq_mhz) - 13.82 * np.log10(tx_height) - a_hr + \
+             (44.9 - 6.55 * np.log10(tx_height)) * np.log10(distance)
+             
+        # Apply environment correction
+        if environment == 'suburban':
+            pl -= 2 * (np.log10(freq_mhz / 28))**2 - 5.4
+        elif environment == 'rural':
+            pl -= 4.78 * (np.log10(freq_mhz))**2 - 18.33 * np.log10(freq_mhz) - 40.98
+            
+        return pl
+        
+    def _trilaterate(self, distances: Dict[str, float], 
+                    device_locations: Dict[str, Tuple[float, float]]) -> Tuple[float, float, float]:
+        """Trilateration using multiple known points and distances.
+        
+        Args:
+            distances: Dictionary of device_id to distance
+            device_locations: Dictionary of device_id to (latitude, longitude)
+            
+        Returns:
+            Tuple of (latitude, longitude, uncertainty)
+        """
+        if len(distances) < 3:
+            raise ValueError("At least 3 points required for trilateration")
+            
+        # Convert to numpy arrays
+        points = np.array([device_locations[dev_id] for dev_id in distances.keys()])
+        dists = np.array([distances[dev_id] for dev_id in distances.keys()])
+        
+        # Initial guess (centroid of known points)
+        x0 = np.mean(points, axis=0)
+        
+        def objective(x):
+            """Objective function: sum of squared differences between
+            calculated and measured distances."""
+            return np.sum((np.sqrt(np.sum((points - x)**2, axis=1)) - dists)**2)
+            
+        # Optimize position
+        result = minimize(objective, x0, method='Nelder-Mead')
+        
+        # Calculate uncertainty based on residuals
+        residuals = np.sqrt(np.sum((points - result.x)**2, axis=1)) - dists
+        uncertainty = np.sqrt(np.mean(residuals**2))
+        
+        return result.x[0], result.x[1], uncertainty
+        
+    def _validate_inputs(self, signal_strengths: Dict[str, float]) -> bool:
+        """Validate input signal strengths.
+        
+        Args:
+            signal_strengths: Dictionary of device_id to signal strength
+            
+        Returns:
+            True if inputs are valid, False otherwise
+        """
+        if not signal_strengths:
+            self.logger.warning("No signal strengths provided")
+            return False
+            
+        # Check if all devices exist
+        unknown_devices = set(signal_strengths.keys()) - set(self.known_devices.keys())
+        if unknown_devices:
+            self.logger.warning(f"Unknown devices: {unknown_devices}")
+            return False
+            
+        # Check for valid signal strengths
+        for device_id, strength in signal_strengths.items():
+            if not isinstance(strength, (int, float)):
+                self.logger.warning(f"Invalid signal strength for device {device_id}")
+                return False
+            if strength > 0:  # Signal strength should be negative in dBm
+                self.logger.warning(f"Unrealistic signal strength for device {device_id}")
+                return False
+                
+        return True
+        
     def estimate_position(self, signal_strengths: Dict[str, float],
                          timestamp: float,
-                         use_fingerprinting: bool = True) -> Optional[Tuple[float, float, float]]:
-        """Estimate position using either triangulation or fingerprinting."""
+                         use_fingerprinting: bool = True,
+                         propagation_model: str = 'log_distance',
+                         path_loss_exponent: float = 2.0) -> Optional[Tuple[float, float, float]]:
+        """Estimate position using either fingerprinting or trilateration with propagation models.
+        
+        Args:
+            signal_strengths: Dictionary of device_id to signal strength in dBm
+            timestamp: Current timestamp
+            use_fingerprinting: Whether to use fingerprinting or trilateration
+            propagation_model: Propagation model to use
+            path_loss_exponent: Path loss exponent for log-distance model
+            
+        Returns:
+            Tuple of (latitude, longitude, uncertainty) or None if estimation fails
+        """
+        # Validate inputs
+        if not self._validate_inputs(signal_strengths):
+            return None
+            
         if use_fingerprinting and self.fingerprints:
             return self.estimate_position_fingerprinting(signal_strengths)
             
-        # Fall back to triangulation
-        lat, lon = self._triangulate_position([self.known_devices[device_id] for device_id in signal_strengths])
-        return lat, lon, 0.0  # No uncertainty for triangulation
+        # Convert signal strengths to distances using propagation model
+        distances = {}
+        for device_id, strength in signal_strengths.items():
+            if device_id in self.known_devices:
+                device = self.known_devices[device_id]
+                # Convert signal strength to distance using propagation model
+                path_loss = self.propagation_models[propagation_model](
+                    distance=1.0,  # Reference distance
+                    frequency=2.4e9,  # Default frequency
+                    tx_height=1.5,  # Default height
+                    rx_height=1.5
+                )
+                distance = self._calculate_distance(
+                    signal_strength=strength,
+                    reference_strength=path_loss,
+                    path_loss_exponent=path_loss_exponent
+                )
+                distances[device_id] = distance
+                
+        if len(distances) >= 3:
+            device_locations = {
+                dev_id: (self.known_devices[dev_id].latitude, 
+                        self.known_devices[dev_id].longitude)
+                for dev_id in distances.keys()
+            }
+            return self._trilaterate(distances, device_locations)
             
+        return None
+
     def get_known_devices(self) -> List[DeviceLocation]:
         """Get list of all known device locations."""
         return list(self.known_devices.values())

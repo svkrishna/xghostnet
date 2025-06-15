@@ -13,29 +13,11 @@ from dataclasses import dataclass
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import pywt
+from .signal_types import ModulationType, SignalFeatures, ClassificationResult, DetectionResult, SignalMetrics
+from scipy.fft import rfft, rfftfreq
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-@dataclass
-class DetectionResult:
-    """Results from signal detection algorithms."""
-    detected: bool
-    confidence: float
-    frequency: float
-    bandwidth: float
-    snr: float
-    features: Dict[str, float]
-    metadata: Dict[str, Any]
-
-@dataclass
-class SignalFeatures:
-    """Extracted signal features for classification."""
-    spectral_features: Dict[str, float]
-    temporal_features: Dict[str, float]
-    statistical_features: Dict[str, float]
-    wavelet_features: Dict[str, float]
-    modulation_features: Dict[str, float]
 
 class AdvancedSignalDetector:
     def __init__(self, sample_rate: float = 2e6, fft_size: int = 1024):
@@ -225,30 +207,31 @@ class AdvancedSignalDetector:
         
     def _estimate_frequency_bandwidth(self, samples: np.ndarray) -> Tuple[float, float]:
         """Estimate signal frequency and bandwidth."""
-        # Compute power spectrum
-        spectrum = np.abs(np.fft.fft(samples)) ** 2
-        freqs = np.fft.fftfreq(len(samples), 1/self.sample_rate)
+        # Compute FFT
+        samples_array = np.array(samples, dtype=np.float64)
+        spectrum = np.fft.rfft(samples_array)
+        freqs = np.fft.rfftfreq(len(samples_array), 1/self.sample_rate)
+        magnitude = np.abs(spectrum)
         
-        # Find peak frequency
-        peak_idx = np.argmax(spectrum)
-        peak_freq = freqs[peak_idx]
+        # Basic spectral features
+        spectral_centroid = np.sum(freqs * magnitude) / np.sum(magnitude)
+        bandwidth = np.sqrt(np.sum((freqs - spectral_centroid)**2 * magnitude) / np.sum(magnitude))
         
-        # Estimate bandwidth at -3dB point
-        peak_power = spectrum[peak_idx]
-        half_power = peak_power / 2
+        # Temporal features
+        zero_crossings = np.sum(np.diff(np.signbit(samples_array)))
+        zero_crossing_rate = zero_crossings / len(samples_array)
+        rms = np.sqrt(np.mean(samples_array**2))
+        crest_factor = np.max(np.abs(samples_array)) / rms if rms > 0 else 0
         
-        # Find -3dB points
-        left_idx = peak_idx
-        while left_idx > 0 and spectrum[left_idx] > half_power:
-            left_idx -= 1
-            
-        right_idx = peak_idx
-        while right_idx < len(spectrum)-1 and spectrum[right_idx] > half_power:
-            right_idx += 1
-            
-        bandwidth = freqs[right_idx] - freqs[left_idx]
+        # Modulation detection
+        modulation = self._detect_modulation_simple(samples_array)
         
-        return abs(peak_freq), abs(bandwidth)
+        # SNR estimation
+        noise_floor = np.percentile(magnitude, 10)
+        signal_peak = np.max(magnitude)
+        snr = 20 * np.log10(signal_peak / noise_floor) if noise_floor > 0 else 0
+        
+        return spectral_centroid, bandwidth
         
     def _calculate_snr(self, samples: np.ndarray) -> float:
         """Calculate signal-to-noise ratio."""
@@ -512,69 +495,80 @@ class AdvancedSignalDetector:
             return np.fft.ifft(spectrum)
             
     def extract_features(self, samples: np.ndarray) -> SignalFeatures:
+        """Extract comprehensive signal features for classification."""
+        # Convert to numpy array
+        samples_array = np.array(samples, dtype=np.float64)
+        
+        # Compute FFT
+        spectrum = np.fft.rfft(samples_array)
+        freqs = np.fft.rfftfreq(len(samples_array), 1/self.sample_rate)
+        magnitude = np.abs(spectrum)
+        
+        # Spectral features
+        spectral_centroid = np.sum(freqs * magnitude) / np.sum(magnitude)
+        bandwidth = np.sqrt(np.sum((freqs - spectral_centroid)**2 * magnitude) / np.sum(magnitude))
+        spectral_flatness = np.exp(np.mean(np.log(magnitude + 1e-10))) / (np.mean(magnitude) + 1e-10)
+        
+        # Temporal features
+        zero_crossings = np.sum(np.diff(np.signbit(samples_array)))
+        zero_crossing_rate = zero_crossings / len(samples_array)
+        rms = np.sqrt(np.mean(samples_array**2))
+        crest_factor = np.max(np.abs(samples_array)) / rms if rms > 0 else 0
+        
+        # SNR estimation
+        noise_floor = np.percentile(magnitude, 10)
+        signal_peak = np.max(magnitude)
+        snr = 20 * np.log10(signal_peak / noise_floor) if noise_floor > 0 else 0
+        
+        # Entropy calculation
+        entropy = -np.sum((magnitude/np.sum(magnitude)) * np.log2(magnitude/np.sum(magnitude) + 1e-10))
+        
+        # Modulation detection
+        modulation = self._detect_modulation_simple(samples_array)
+        
+        return SignalFeatures(
+            frequency=float(spectral_centroid),
+            bandwidth=float(bandwidth),
+            modulation=modulation,
+            snr=float(snr),
+            spectral_centroid=float(spectral_centroid),
+            spectral_flatness=float(spectral_flatness),
+            zero_crossing_rate=float(zero_crossing_rate),
+            crest_factor=float(crest_factor),
+            rms=float(rms),
+            entropy=float(entropy)
+        )
+        
+    def _detect_modulation_simple(self, samples: np.ndarray) -> ModulationType:
         """
-        Extract comprehensive signal features.
+        Simple modulation detection from signal samples.
         
         Args:
             samples: Input signal samples
             
         Returns:
-            SignalFeatures object containing extracted features
+            Detected modulation type
         """
-        # Spectral features
-        spectrum = np.abs(np.fft.fft(samples)) ** 2
-        freqs = np.fft.fftfreq(len(samples), 1/self.sample_rate)
-        
-        spectral_features = {
-            'spectral_centroid': float(np.sum(freqs * spectrum) / np.sum(spectrum)),
-            'spectral_bandwidth': float(np.sqrt(np.sum((freqs - np.sum(freqs * spectrum) / np.sum(spectrum))**2 * spectrum) / np.sum(spectrum))),
-            'spectral_flatness': float(np.exp(np.mean(np.log(spectrum + 1e-10))) / np.mean(spectrum)),
-            'spectral_rolloff': float(freqs[np.where(np.cumsum(spectrum) >= 0.85 * np.sum(spectrum))[0][0]])
-        }
-        
-        # Temporal features
-        temporal_features = {
-            'zero_crossing_rate': float(np.sum(np.diff(np.signbit(samples))) / len(samples)),
-            'rms': float(np.sqrt(np.mean(np.abs(samples)**2))),
-            'peak_to_peak': float(np.max(np.abs(samples)) - np.min(np.abs(samples))),
-            'crest_factor': float(np.max(np.abs(samples)) / np.sqrt(np.mean(np.abs(samples)**2)))
-        }
-        
-        # Statistical features
-        statistical_features = {
-            'kurtosis': float(kurtosis(np.abs(samples))),
-            'skewness': float(skew(np.abs(samples))),
-            'entropy': float(entropy(np.abs(samples))),
-            'variance': float(np.var(samples))
-        }
-        
-        # Wavelet features
-        coeffs = pywt.wavedec(samples, 'db4', level=4)
-        wavelet_features = {
-            'wavelet_energy': float(np.sum(np.abs(coeffs[0])**2)),
-            'wavelet_entropy': float(entropy(np.abs(coeffs[0]))),
-            'wavelet_mean': float(np.mean(np.abs(coeffs[0]))),
-            'wavelet_std': float(np.std(np.abs(coeffs[0])))
-        }
-        
-        # Modulation features
+        # Basic modulation detection logic
+        if len(samples) < 1000:
+            return ModulationType.UNKNOWN
+            
+        # Check for AM
+        envelope = np.abs(samples)
+        if np.std(envelope) / np.mean(envelope) > 0.5:
+            return ModulationType.AM
+            
+        # Check for FM
         phase = np.unwrap(np.angle(samples))
-        freq = np.diff(phase) * self.sample_rate / (2 * np.pi)
-        
-        modulation_features = {
-            'frequency_deviation': float(np.std(freq)),
-            'phase_deviation': float(np.std(phase)),
-            'amplitude_mean': float(np.mean(np.abs(samples))),
-            'amplitude_std': float(np.std(np.abs(samples)))
-        }
-        
-        return SignalFeatures(
-            spectral_features=spectral_features,
-            temporal_features=temporal_features,
-            statistical_features=statistical_features,
-            wavelet_features=wavelet_features,
-            modulation_features=modulation_features
-        )
+        if np.std(np.diff(phase)) > 0.5:
+            return ModulationType.FM
+            
+        # Check for PSK
+        constellation = samples[::100]  # Sample every 100th point
+        if len(np.unique(np.round(np.angle(constellation) / (np.pi/4)))) <= 4:
+            return ModulationType.PSK
+            
+        return ModulationType.UNKNOWN
         
     def recognize_modulation(self, samples: np.ndarray) -> str:
         """
@@ -586,24 +580,9 @@ class AdvancedSignalDetector:
         Returns:
             Detected modulation type
         """
-        features = self.extract_features(samples)
-        
-        # Combine all features into a single array
-        feature_vector = np.concatenate([
-            list(features.spectral_features.values()),
-            list(features.temporal_features.values()),
-            list(features.statistical_features.values()),
-            list(features.wavelet_features.values()),
-            list(features.modulation_features.values())
-        ])
-        
-        # Normalize features
-        feature_vector = self.scaler.transform(feature_vector.reshape(1, -1))
-        
-        # Predict modulation type
-        # Note: This requires a trained classifier
-        # For now, return a placeholder
-        return "unknown"
+        # Use the simpler modulation detection method
+        modulation = self._detect_modulation_simple(samples)
+        return modulation.value
         
     def calculate_signal_quality(self, samples: np.ndarray) -> Dict[str, Union[float, Dict[str, float]]]:
         """
@@ -659,4 +638,292 @@ class AdvancedSignalDetector:
             'constellation_spread': float(np.std(np.abs(normalized))),
             'constellation_skewness': float(skew(np.abs(normalized))),
             'constellation_kurtosis': float(kurtosis(np.abs(normalized)))
-        } 
+        }
+
+    def _detect_modulation(self, samples: np.ndarray, 
+                         spectral_flatness: float, 
+                         bandwidth: float) -> Tuple[ModulationType, float]:
+        """
+        Detect modulation type from signal samples.
+        
+        Args:
+            samples: Input signal samples
+            
+        Returns:
+            Detected modulation type
+        """
+        # Basic modulation detection logic
+        if len(samples) < 1000:
+            return ModulationType.UNKNOWN, 0.0
+            
+        # Check for AM
+        envelope = np.abs(samples)
+        if np.std(envelope) / np.mean(envelope) > 0.5:
+            return ModulationType.AM, 0.8
+            
+        # Check for FM
+        phase = np.unwrap(np.angle(samples))
+        if np.std(np.diff(phase)) > 0.5:
+            return ModulationType.FM, 0.7
+            
+        # Check for PSK
+        constellation = samples[::100]  # Sample every 100th point
+        if len(np.unique(np.round(np.angle(constellation) / (np.pi/4)))) <= 4:
+            return ModulationType.PSK, 0.8
+            
+        return ModulationType.UNKNOWN, 0.0
+
+class SignalDetector:
+    def __init__(self, sample_rate: int = 44100, buffer_size: int = 1024):
+        """Initialize signal detector with real-time processing capabilities.
+        
+        Args:
+            sample_rate: Sample rate in Hz
+            buffer_size: Size of processing buffer
+        """
+        self.logger = logging.getLogger(__name__)
+        self.sample_rate = sample_rate
+        self.buffer_size = buffer_size
+        self.buffer = np.zeros(buffer_size, dtype=np.float64)
+        self.buffer_index = 0
+        self.noise_floor = -90.0  # Initial noise floor estimate in dB
+        self.snr_threshold = 10.0  # SNR threshold for signal detection
+        
+        # Initialize Kalman filter
+        self.kalman_filter = {
+            'x': 0.0,  # State estimate
+            'P': 1.0,  # Error covariance
+            'Q': 0.001,  # Process noise covariance
+            'R': 0.1    # Measurement noise covariance
+        }
+        
+        # Initialize adaptive filter
+        self.adaptive_filter = {
+            'mu': 0.01,  # Step size
+            'filter_length': 64,
+            'weights': np.zeros(64, dtype=np.float64)
+        }
+        
+        # Initialize modulation detection parameters
+        self.modulation_thresholds = {
+            'magnitude_std': 0.1,
+            'phase_std': 0.5,
+            'spectral_flatness': 0.8,
+            'bandwidth_threshold': 1000
+        }
+        
+    def process_samples(self, samples: np.ndarray) -> Tuple[bool, float, SignalMetrics]:
+        """Process incoming samples in real-time.
+        
+        Args:
+            samples: Input signal samples
+            
+        Returns:
+            Tuple of (signal_detected, snr, metrics)
+        """
+        # Update buffer
+        self._update_buffer(samples)
+        
+        # Apply noise filtering
+        filtered_samples = self._apply_noise_filtering(self.buffer)
+        
+        # Calculate signal metrics
+        metrics = self.get_signal_quality(filtered_samples)
+        
+        # Update noise floor estimate
+        self._update_noise_floor(filtered_samples)
+        
+        # Detect signal presence
+        signal_detected = metrics.snr > self.snr_threshold
+        
+        return signal_detected, metrics.snr, metrics
+        
+    def _update_buffer(self, samples: np.ndarray):
+        """Update circular buffer with new samples."""
+        n_samples = len(samples)
+        if n_samples >= self.buffer_size:
+            # If we have more samples than buffer size, keep the most recent ones
+            self.buffer = samples[-self.buffer_size:]
+            self.buffer_index = 0
+        else:
+            # Otherwise, shift buffer and add new samples
+            self.buffer = np.roll(self.buffer, -n_samples)
+            self.buffer[self.buffer_size - n_samples:] = samples
+            self.buffer_index = (self.buffer_index + n_samples) % self.buffer_size
+            
+    def _apply_noise_filtering(self, samples: np.ndarray) -> np.ndarray:
+        """Apply multiple noise filtering techniques."""
+        # Apply Kalman filter
+        filtered = self._apply_kalman_filter(samples)
+        
+        # Apply adaptive filtering
+        filtered = self._apply_adaptive_filter(filtered)
+        
+        # Apply spectral subtraction
+        filtered = self._apply_spectral_subtraction(filtered)
+        
+        return filtered
+        
+    def _apply_kalman_filter(self, samples: np.ndarray) -> np.ndarray:
+        """Apply Kalman filtering for noise reduction."""
+        filtered = np.zeros_like(samples)
+        
+        for i, sample in enumerate(samples):
+            # Predict
+            x_pred = self.kalman_filter['x']
+            P_pred = self.kalman_filter['P'] + self.kalman_filter['Q']
+            
+            # Update
+            K = P_pred / (P_pred + self.kalman_filter['R'])  # Kalman gain
+            self.kalman_filter['x'] = x_pred + K * (sample - x_pred)
+            self.kalman_filter['P'] = (1 - K) * P_pred
+            
+            filtered[i] = self.kalman_filter['x']
+            
+        return filtered
+        
+    def _apply_adaptive_filter(self, samples: np.ndarray) -> np.ndarray:
+        """Apply adaptive filtering for noise cancellation."""
+        filtered = np.zeros_like(samples)
+        weights = self.adaptive_filter['weights']
+        mu = self.adaptive_filter['mu']
+        
+        for i in range(len(samples)):
+            if i >= len(weights):
+                # Apply filter
+                filtered[i] = np.sum(weights * samples[i-len(weights):i])
+                
+                # Update weights using LMS algorithm
+                error = samples[i] - filtered[i]
+                weights += mu * error * samples[i-len(weights):i]
+                
+        return filtered
+        
+    def _apply_spectral_subtraction(self, samples: np.ndarray) -> np.ndarray:
+        """Apply spectral subtraction for noise reduction."""
+        # Compute FFT
+        fft = np.fft.rfft(samples)
+        magnitude = np.abs(fft)
+        phase = np.angle(fft)
+        
+        # Estimate noise spectrum
+        noise_spectrum = np.mean(magnitude[:len(magnitude)//4])
+        
+        # Subtract noise spectrum
+        magnitude = np.maximum(magnitude - noise_spectrum, 0)
+        
+        # Reconstruct signal
+        filtered_fft = magnitude * np.exp(1j * phase)
+        filtered = np.fft.irfft(filtered_fft)
+        
+        return filtered
+        
+    def _update_noise_floor(self, samples: np.ndarray):
+        """Update noise floor estimate using exponential averaging."""
+        current_noise = 10 * np.log10(np.mean(samples**2))
+        alpha = 0.1  # Smoothing factor
+        self.noise_floor = alpha * current_noise + (1 - alpha) * self.noise_floor
+        
+    def get_signal_quality(self, samples: np.ndarray) -> SignalMetrics:
+        """Calculate comprehensive signal quality metrics."""
+        # Calculate basic metrics
+        signal_power = np.mean(samples**2)
+        signal_db = 10 * np.log10(signal_power)
+        snr = signal_db - self.noise_floor
+        
+        # Calculate EVM
+        evm = np.sqrt(np.mean((samples - np.mean(samples))**2)) / np.sqrt(signal_power)
+        
+        # Calculate crest factor
+        crest_factor = np.max(np.abs(samples)) / np.sqrt(signal_power)
+        
+        # Calculate RMS value
+        rms = np.sqrt(signal_power)
+        
+        # Calculate spectral features
+        spectrum = np.fft.rfft(samples)
+        freq = np.fft.rfftfreq(len(samples), 1/self.sample_rate)
+        
+        # Calculate bandwidth
+        magnitude = np.abs(spectrum)
+        threshold = 0.1 * np.max(magnitude)
+        bandwidth = np.sum(magnitude > threshold) * (freq[1] - freq[0])
+        
+        # Calculate spectral flatness
+        spectral_flatness = np.exp(np.mean(np.log(magnitude + 1e-10))) / np.mean(magnitude)
+        
+        # Detect modulation type
+        modulation_type, confidence = self._detect_modulation(samples, spectral_flatness, bandwidth)
+        
+        return SignalMetrics(
+            snr=float(snr),
+            signal_strength=float(signal_db),
+            evm=float(evm),
+            crest_factor=float(crest_factor),
+            rms=float(rms),
+            noise_floor=float(self.noise_floor),
+            bandwidth=float(bandwidth),
+            spectral_flatness=float(spectral_flatness),
+            modulation_type=modulation_type,
+            confidence=float(confidence)
+        )
+        
+    def _detect_modulation(self, samples: np.ndarray, 
+                         spectral_flatness: float, 
+                         bandwidth: float) -> Tuple[ModulationType, float]:
+        """Detect modulation type with confidence score."""
+        # Calculate signal statistics
+        magnitude = np.abs(samples)
+        phase = np.angle(samples)
+        
+        # Calculate features
+        magnitude_std = np.std(magnitude)
+        phase_std = np.std(phase)
+        magnitude_skew = skew(magnitude)
+        phase_skew = skew(phase)
+        
+        # Initialize confidence scores
+        confidences = {
+            ModulationType.PSK: 0.0,
+            ModulationType.ASK: 0.0,
+            ModulationType.FSK: 0.0,
+            ModulationType.FM: 0.0,
+            ModulationType.AM: 0.0,
+            ModulationType.QAM: 0.0,
+            ModulationType.OFDM: 0.0
+        }
+        
+        # Calculate confidence scores for each modulation type
+        if magnitude_std < self.modulation_thresholds['magnitude_std'] and phase_std > self.modulation_thresholds['phase_std']:
+            confidences[ModulationType.PSK] = 0.8
+        elif magnitude_std > self.modulation_thresholds['magnitude_std'] and phase_std < self.modulation_thresholds['phase_std']:
+            confidences[ModulationType.ASK] = 0.8
+        elif magnitude_std < self.modulation_thresholds['magnitude_std'] and phase_std < self.modulation_thresholds['phase_std']:
+            confidences[ModulationType.FSK] = 0.8
+            
+        if spectral_flatness > self.modulation_thresholds['spectral_flatness']:
+            confidences[ModulationType.FM] = 0.7
+        elif bandwidth < self.modulation_thresholds['bandwidth_threshold']:
+            confidences[ModulationType.AM] = 0.7
+            
+        # Select modulation type with highest confidence
+        modulation_type = max(confidences.items(), key=lambda x: x[1])
+        
+        return modulation_type[0], modulation_type[1]
+        
+    def set_thresholds(self, snr_threshold: Optional[float] = None,
+                      magnitude_std: Optional[float] = None,
+                      phase_std: Optional[float] = None,
+                      spectral_flatness: Optional[float] = None,
+                      bandwidth_threshold: Optional[float] = None):
+        """Update detection thresholds."""
+        if snr_threshold is not None:
+            self.snr_threshold = snr_threshold
+        if magnitude_std is not None:
+            self.modulation_thresholds['magnitude_std'] = magnitude_std
+        if phase_std is not None:
+            self.modulation_thresholds['phase_std'] = phase_std
+        if spectral_flatness is not None:
+            self.modulation_thresholds['spectral_flatness'] = spectral_flatness
+        if bandwidth_threshold is not None:
+            self.modulation_thresholds['bandwidth_threshold'] = bandwidth_threshold 
