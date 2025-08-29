@@ -1,0 +1,22 @@
+# SDR Hardware Support - Requires system dependencies
+# Install system dependencies first:
+# brew install soapysdr sdrplay hackrf uhd
+
+# RTL-SDR support
+pyrtlsdr>=0.2.93
+
+# Unified SDR interface layer
+soapysdr>=0.8.0
+
+# Analog Devices PlutoSDR interface
+pyadi-iio>=0.0.19
+pylibiio>=0.25
+
+# USB access for SDR devices
+pyusb>=1.2.1
+
+# Additional SDR libraries
+# hackrf>=0.1.0  # Not available on PyPI - install via: pip install hackrf-python
+# uhd>=4.4.0.0   # Not available on PyPI - install via: pip install uhd-python
+# airspy>=1.0.9  # Not available on PyPI - install via: pip install airspy
+# sdrplay>=1.0.0 # Not available on PyPI - install via: pip install sdrplay
