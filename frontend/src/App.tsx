@@ -1,6 +1,7 @@
 import React from 'react';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import Dashboard from './components/Dashboard';
+import Login from './components/Login';
 import './App.css';
 
 const theme = createTheme({
@@ -40,11 +41,12 @@ const theme = createTheme({
 });
 
 const App: React.FC = () => {
+  const isAuthed = Boolean(localStorage.getItem('ghostnet_token') || process.env.REACT_APP_API_TOKEN);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <div className="dashboard-container">
-        <Dashboard />
+        {isAuthed ? <Dashboard /> : <Login />}
       </div>
     </ThemeProvider>
   );

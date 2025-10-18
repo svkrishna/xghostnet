@@ -31,10 +31,11 @@ COPY backbone/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Set working directory
-WORKDIR /app
+WORKDIR /app/backbone/src
 
 # Copy application code
 COPY . .
 
 # Run the application
-CMD ["python3", "backbone/src/main.py"] 
+EXPOSE 8000
+CMD ["python3", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

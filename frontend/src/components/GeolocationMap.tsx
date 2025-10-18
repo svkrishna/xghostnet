@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import { Icon } from 'leaflet';
-import axios from 'axios';
-import { Box, Typography, Button, CircularProgress, Alert, Paper } from '@mui/material';
+import { colorForDeviceId } from '../api/colors';
+import { apiClient } from '../api/client';
+import { Box, Typography, Button, CircularProgress, Alert, Paper, Switch, FormControlLabel } from '@mui/material';
 import { PlayArrow, Stop, AddLocation, Timeline } from '@mui/icons-material';
 import 'leaflet/dist/leaflet.css';
 
@@ -36,11 +37,13 @@ const GeolocationMap: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [showClusters, setShowClusters] = useState(false);
+  const [stats, setStats] = useState<any | null>(null);
+  const [receivers, setReceivers] = useState<any[]>([]);
 
   const fetchDevices = useCallback(async () => {
     try {
-      const response = await axios.get<{ devices: Device[] }>('/api/geolocation/devices');
-      setDevices(response.data.devices);
+      const response = await apiClient.get<{ devices: Device[] }>('/geolocation/devices');
+      setDevices((response.data as any).devices || []);
     } catch (err) {
       setError('Failed to fetch devices');
     }
@@ -48,10 +51,23 @@ const GeolocationMap: React.FC = () => {
 
   const fetchFingerprints = useCallback(async () => {
     try {
-      const response = await axios.get<{ fingerprints: Fingerprint[] }>('/api/geolocation/fingerprints');
-      setFingerprints(response.data.fingerprints);
+      const response = await apiClient.get('/geolocation/fingerprints');
+      const clustersRes = await apiClient.get('/geolocation/fingerprints/clusters');
+      const statsRes = await apiClient.get('/geolocation/fingerprints/statistics');
+      setFingerprints((response.data as any).fingerprints || []);
+      setClusters((clustersRes.data as any).clusters || []);
+      setStats((statsRes.data as any).statistics || null);
     } catch (err) {
       setError('Failed to fetch fingerprints');
+    }
+  }, []);
+
+  const fetchReceivers = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/signals/devices');
+      setReceivers(res.data?.devices || []);
+    } catch (err) {
+      setReceivers([]);
     }
   }, []);
 
@@ -67,18 +83,19 @@ const GeolocationMap: React.FC = () => {
   useEffect(() => {
     fetchDevices();
     fetchFingerprints();
+    fetchReceivers();
     const interval = setInterval(fetchDevices, 5000);
     return () => clearInterval(interval);
-  }, [fetchDevices, fetchFingerprints]);
+  }, [fetchDevices, fetchFingerprints, fetchReceivers]);
 
   const handleCalibrationToggle = async () => {
     try {
       setLoading(true);
       if (isCalibrating) {
-        await axios.post('/api/geolocation/calibration/stop');
+        await apiClient.post('/geolocation/calibration/stop');
         await fetchFingerprints();
       } else {
-        await axios.post('/api/geolocation/calibration/start');
+        await apiClient.post('/geolocation/calibration/start');
       }
       setIsCalibrating(!isCalibrating);
     } catch (err) {
@@ -97,7 +114,7 @@ const GeolocationMap: React.FC = () => {
         [device.device_id]: device.signal_strength
       }), {});
 
-      await axios.post('/api/geolocation/fingerprints', {
+      await apiClient.post('/geolocation/fingerprints', {
         location_id: `fp_${Date.now()}`,
         latitude: lat,
         longitude: lng,
@@ -146,7 +163,7 @@ const GeolocationMap: React.FC = () => {
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             color={isCalibrating ? 'error' : 'primary'}
@@ -163,6 +180,48 @@ const GeolocationMap: React.FC = () => {
           >
             {showClusters ? 'Hide Clusters' : 'Show Clusters'}
           </Button>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              const pts = receivers
+                .filter(r => r.receiver_position?.lat || r.receiver_position?.lon)
+                .map(r => [r.receiver_position.lat || 0, r.receiver_position.lon || 0]);
+              if (pts.length === 0) return;
+              // Fit bounds using leaflet instance
+              const lats = pts.map(p => p[0]);
+              const lons = pts.map(p => p[1]);
+              const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
+              const minLon = Math.min(...lons); const maxLon = Math.max(...lons);
+              const map = (document.querySelector('.leaflet-container') as any)?._leaflet_map;
+              if (map && map.fitBounds) {
+                map.fitBounds([[minLat, minLon], [maxLat, maxLon]]);
+              }
+            }}
+          >
+            Center Receivers
+          </Button>
+          <FormControlLabel
+            control={<Switch checked={showClusters} onChange={() => setShowClusters(!showClusters)} />}
+            label="Clusters"
+          />
+          {stats && (
+            <Paper sx={{ p: 1, bgcolor: 'background.default' }}>
+              <Typography variant="caption" color="text.secondary">
+                {`Fingerprints: ${stats.count}  Devices: ${stats.devices}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                {`Lat[${stats.coverage.min_lat.toFixed(2)}, ${stats.coverage.max_lat.toFixed(2)}] Lon[${stats.coverage.min_lon.toFixed(2)}, ${stats.coverage.max_lon.toFixed(2)}]`}
+              </Typography>
+            </Paper>
+          )}
+          {showClusters && (
+            <Paper sx={{ p: 1, bgcolor: 'background.default' }}>
+              <Typography variant="caption" color="text.secondary">Cluster Colors:</Typography>
+              {clusters.map((_, idx) => (
+                <span key={idx} style={{ display: 'inline-block', width: 12, height: 12, backgroundColor: `hsl(${idx * 30}, 70%, 50%)`, marginLeft: 8, borderRadius: 2 }} />
+              ))}
+            </Paper>
+          )}
           {isCalibrating && (
             <Typography variant="body2" color="text.secondary">
               Click on the map to add fingerprints
@@ -208,6 +267,24 @@ const GeolocationMap: React.FC = () => {
                 </Typography>
               </Popup>
             </Marker>
+          ))}
+
+          {receivers.map((r) => (
+            (r.receiver_position?.lat || r.receiver_position?.lon) ? (
+              <Marker key={`rx_${r.device_id}`}
+                position={[r.receiver_position?.lat || 0, r.receiver_position?.lon || 0]}
+              >
+                <Popup>
+                  <Typography variant="subtitle2">
+                    <span style={{ width: 12, height: 12, display: 'inline-block', backgroundColor: colorForDeviceId(r.device_id), borderRadius: 2, marginRight: 6 }} />
+                    Receiver: {r.device_id}
+                  </Typography>
+                  <Typography variant="body2">Active: {String(r.active)}</Typography>
+                  <Typography variant="body2">Lat: {r.receiver_position?.lat ?? 0}, Lon: {r.receiver_position?.lon ?? 0}</Typography>
+                  <Typography variant="body2">Alt: {r.receiver_position?.alt_m ?? 0} m</Typography>
+                </Popup>
+              </Marker>
+            ) : null
           ))}
 
           {fingerprints.map((fp) => (
@@ -258,6 +335,19 @@ const GeolocationMap: React.FC = () => {
             </Circle>
           ))}
         </MapContainer>
+        {receivers.length > 0 && (
+          <Paper sx={{ position: 'absolute', bottom: 12, left: 12, p: 1.5, bgcolor: 'background.paper', opacity: 0.9 }}>
+            <Typography variant="caption" color="text.secondary">Receivers</Typography>
+            <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap', maxWidth: 360 }}>
+              {receivers.map((r) => (
+                <Box key={`legend_${r.device_id}`} sx={{ display: 'flex', alignItems: 'center', mr: 1 }}>
+                  <span style={{ width: 10, height: 10, display: 'inline-block', backgroundColor: colorForDeviceId(r.device_id), borderRadius: 2, marginRight: 6 }} />
+                  <Typography variant="caption">{r.device_id}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        )}
       </Box>
     </Box>
   );

@@ -4,7 +4,7 @@ services:
   ghostnet:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: backbone/Dockerfile
     container_name: ghostnet
     restart: unless-stopped
     privileged: true  # Required for USB device access
@@ -33,12 +33,26 @@ services:
           cpus: '1'
           memory: 1G
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ghostnet-frontend
+    restart: unless-stopped
+    depends_on:
+      - ghostnet
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_BASE=/api
+    networks:
+      - ghostnet_net
 networks:
   ghostnet_net:
     driver: bridge

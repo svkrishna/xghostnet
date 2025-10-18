@@ -69,17 +69,31 @@ class StatisticalFeatures:
     entropy: float
 
 class SignalProcessor:
-    def __init__(self, sample_rate: int = 44100, fft_size: int = 2048):
+    def __init__(self, sample_rate: int = 44100, fft_size: int = 2048, use_gpu: bool = False):
         """Initialize signal processor.
         
         Args:
             sample_rate: Sample rate in Hz
             fft_size: Size of FFT for spectral analysis
+            use_gpu: Enable GPU acceleration when torch with CUDA is available
         """
         self.logger = logging.getLogger(__name__)
         self.sample_rate = sample_rate
         self.fft_size = fft_size
         self.window = signal.windows.hann(fft_size)
+        self.use_gpu = use_gpu
+        # Lazy torch import and device selection
+        self._torch_available = False
+        self._torch = None
+        self._device = None
+        if use_gpu:
+            try:
+                import torch  # type: ignore
+                self._torch_available = True
+                self._torch = torch
+                self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            except Exception:
+                self._torch_available = False
         
     def extract_spectral_features(self, samples: np.ndarray) -> SpectralFeatures:
         """Extract spectral features from signal.
@@ -383,6 +397,31 @@ class SignalProcessor:
         Returns:
             Tuple of (frequencies, times, spectrogram)
         """
+        if self.use_gpu and self._torch_available and self._torch is not None:
+            torch = self._torch
+            try:
+                # Ensure float32 tensor on device
+                x = torch.as_tensor(samples, dtype=torch.float32, device=self._device)
+                # Create Hann window on device
+                win = torch.hann_window(self.fft_size, periodic=True, device=self._device)
+                hop_length = self.fft_size // 2
+                # stft returns complex tensor: (freq, frames)
+                stft = torch.stft(
+                    input=x,
+                    n_fft=self.fft_size,
+                    hop_length=hop_length,
+                    win_length=self.fft_size,
+                    window=win,
+                    center=False,
+                    return_complex=True,
+                )
+                Sxx = (stft.abs() ** 2).detach().to('cpu').numpy()
+                # Frequencies and times
+                freqs = np.fft.rfftfreq(self.fft_size, 1 / self.sample_rate)
+                times = (np.arange(Sxx.shape[1]) * hop_length) / float(self.sample_rate)
+                return freqs, times, Sxx
+            except Exception:
+                pass
         frequencies, times, Sxx = signal.spectrogram(
             samples,
             fs=self.sample_rate,

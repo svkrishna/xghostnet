@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Box, Drawer, AppBar, Toolbar, Typography, List, ListItem, ListItemIcon, ListItemText, IconButton, CssBaseline } from '@mui/material';
-import { Menu as MenuIcon, SignalCellularAlt, Settings, Storage, Devices, LocationOn } from '@mui/icons-material';
+import { Box, Drawer, AppBar, Toolbar, Typography, List, ListItem, ListItemIcon, ListItemText, IconButton, CssBaseline, Chip, Button } from '@mui/material';
+import { Menu as MenuIcon, SignalCellularAlt, Settings, Storage, Devices, LocationOn, Login as LoginIcon } from '@mui/icons-material';
+import Login from './Login';
+import { apiClient } from '../api/client';
 import SpectrumVisualizer from './SpectrumVisualizer';
 import SignalRecorder from './SignalRecorder';
 import DeviceMonitor from './DeviceMonitor';
 import ConfigManager from './ConfigManager';
 import GeolocationMap from './GeolocationMap';
+import ReceiversPanel from './ReceiversPanel';
 
 const drawerWidth = 240;
 
@@ -22,7 +25,9 @@ const Dashboard: React.FC = () => {
     { text: 'Signal Recorder', icon: <Storage />, view: 'recorder' },
     { text: 'Device Monitor', icon: <Devices />, view: 'devices' },
     { text: 'Geolocation', icon: <LocationOn />, view: 'geolocation' },
+    { text: 'Receivers', icon: <Devices />, view: 'receivers' },
     { text: 'Configuration', icon: <Settings />, view: 'config' },
+    { text: 'Login', icon: <LoginIcon />, view: 'login' },
   ];
 
   const drawer = (
@@ -56,6 +61,10 @@ const Dashboard: React.FC = () => {
         return <GeolocationMap />;
       case 'config':
         return <ConfigManager />;
+      case 'receivers':
+        return <ReceiversPanel />;
+      case 'login':
+        return <Login />;
       default:
         return <SpectrumVisualizer />;
     }
@@ -81,9 +90,13 @@ const Dashboard: React.FC = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             SDR Dashboard
           </Typography>
+          <Chip size="small" color="success" label="Authenticated" sx={{ mr: 2 }} />
+          <Button color="inherit" onClick={() => { localStorage.removeItem('ghostnet_token'); window.location.reload(); }}>
+            Logout
+          </Button>
         </Toolbar>
       </AppBar>
       <Box

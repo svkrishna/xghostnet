@@ -1,27 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Chip } from '@mui/material';
 import { Refresh, Settings } from '@mui/icons-material';
-
-interface Device {
-  id: string;
-  type: string;
-  status: 'active' | 'inactive' | 'error';
-  sample_rate: number;
-  center_freq: number;
-  gain: number;
-  last_update: string;
-}
+import { fetchKnownDevices, KnownDevice } from '../api/geolocation';
 
 const DeviceMonitor: React.FC = () => {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<KnownDevice[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchDevices = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/devices');
-      const data = await response.json();
-      setDevices(data.devices);
+      const list = await fetchKnownDevices();
+      setDevices(list);
     } catch (error) {
       console.error('Error fetching devices:', error);
     } finally {
@@ -62,31 +52,27 @@ const DeviceMonitor: React.FC = () => {
           <TableHead>
             <TableRow>
               <TableCell>Device ID</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Sample Rate</TableCell>
-              <TableCell>Center Frequency</TableCell>
-              <TableCell>Gain</TableCell>
+              <TableCell>Latitude</TableCell>
+              <TableCell>Longitude</TableCell>
+              <TableCell>Signal Strength (dBm)</TableCell>
               <TableCell>Last Update</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {devices.map((device) => (
-              <TableRow key={device.id}>
-                <TableCell>{device.id}</TableCell>
-                <TableCell>{device.type}</TableCell>
+              <TableRow key={device.device_id}>
+                <TableCell>{device.device_id}</TableCell>
+                <TableCell>{device.latitude.toFixed(6)}</TableCell>
+                <TableCell>{device.longitude.toFixed(6)}</TableCell>
                 <TableCell>
                   <Chip 
-                    label={device.status} 
-                    color={getStatusColor(device.status) as any}
+                    label={`${device.signal_strength} dBm`} 
+                    color={device.signal_strength > -60 ? 'success' : device.signal_strength > -80 ? 'warning' : 'error' as any}
                     size="small"
                   />
                 </TableCell>
-                <TableCell>{device.sample_rate.toLocaleString()} Hz</TableCell>
-                <TableCell>{device.center_freq.toLocaleString()} Hz</TableCell>
-                <TableCell>{device.gain} dB</TableCell>
-                <TableCell>{new Date(device.last_update).toLocaleString()}</TableCell>
+                <TableCell>{new Date(device.timestamp * 1000).toLocaleString()}</TableCell>
                 <TableCell>
                   <IconButton size="small">
                     <Settings />

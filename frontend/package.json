@@ -18,10 +18,13 @@
     "react-dom": "^18.2.0",
     "react-leaflet": "^5.0.0",
     "react-plotly.js": "^2.6.0",
+    "axios": "^1.6.7",
+    "file-saver": "^2.0.5",
     "react-scripts": "5.0.1",
     "socket.io-client": "^4.7.4",
     "typescript": "^4.9.5"
   },
+  "proxy": "http://localhost:8000",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -48,6 +51,7 @@
   },
   "devDependencies": {
     "@types/axios": "^0.9.36",
+    "@types/file-saver": "^2.0.5",
     "@types/leaflet": "^1.9.18",
     "@types/react-leaflet": "^2.8.3"
   }

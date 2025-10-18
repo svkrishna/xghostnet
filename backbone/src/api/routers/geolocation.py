@@ -78,6 +78,31 @@ async def get_known_devices(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/fingerprints")
+async def list_fingerprints(
+    token: str = Depends(security_manager.oauth2_scheme)
+):
+    """List all stored fingerprints."""
+    try:
+        fps = geolocator.get_fingerprints()
+        return {
+            "status": "success",
+            "fingerprints": [
+                {
+                    "location_id": fp.location_id,
+                    "latitude": fp.latitude,
+                    "longitude": fp.longitude,
+                    "signal_strengths": fp.signal_strengths,
+                    "timestamp": fp.timestamp,
+                    "metadata": fp.metadata,
+                }
+                for fp in fps
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/devices/{device_id}")
 async def remove_device_location(
     device_id: str,

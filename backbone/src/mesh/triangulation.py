@@ -155,15 +155,38 @@ class Triangulator:
             actual_strength = features[i].get('rms_power', 0)
             residuals.append(expected_strength - actual_strength)
             
-            # Add TDOA residual if available
-            if 'timestamp' in features[i]:
-                # TODO: Implement TDOA calculation
-                pass
+            # Add TDOA residual if available: use pairwise TDOA between this
+            # receiver and the first receiver as reference when timestamps exist.
+            # We assume timestamps reflect detection time in seconds.
+            if 'timestamp' in features[i] and 'timestamp' in features[0]:
+                c = 299792458.0  # speed of light m/s
+                # Expected propagation time from source to receiver
+                d_i = np.linalg.norm(position - receiver_positions[i])
+                d_0 = np.linalg.norm(position - receiver_positions[0])
+                expected_tdoa = (d_i - d_0) / c
+                observed_tdoa = features[i]['timestamp'] - features[0]['timestamp']
+                residuals.append(1e6 * (observed_tdoa - expected_tdoa))  # scale to microseconds
             
-            # Add Doppler residual if available
-            if 'doppler_shift' in features[i]:
-                # TODO: Implement Doppler-based residual
-                pass
+            # Add FDOA/Doppler residual using receiver velocities if provided
+            # features[i] may include 'receiver_velocity': (vx, vy, vz) in m/s
+            # and 'center_freq' (Hz). Expected Doppler: f_d = -(f_c / c) * (v · r_hat)
+            if 'doppler_shift' in features[i] and 'doppler_shift' in features[0]:
+                c = 299792458.0
+                f_c = features[i].get('center_freq', 2.4e9)
+                # Reference receiver direction
+                r0 = receiver_positions[0]
+                r_i = receiver_positions[i]
+                vec0 = position - r0
+                veci = position - r_i
+                rhat0 = vec0 / (np.linalg.norm(vec0) + 1e-9)
+                rhati = veci / (np.linalg.norm(veci) + 1e-9)
+                v0 = np.array(features[0].get('receiver_velocity', (0.0, 0.0, 0.0)), dtype=float)
+                vi = np.array(features[i].get('receiver_velocity', (0.0, 0.0, 0.0)), dtype=float)
+                fd0_exp = -(f_c / c) * float(np.dot(v0, rhat0))
+                fdi_exp = -(f_c / c) * float(np.dot(vi, rhati))
+                expected_df = fdi_exp - fd0_exp
+                observed_df = float(features[i]['doppler_shift']) - float(features[0]['doppler_shift'])
+                residuals.append((observed_df - expected_df) * 1e-3)
         
         return np.array(residuals)
     
