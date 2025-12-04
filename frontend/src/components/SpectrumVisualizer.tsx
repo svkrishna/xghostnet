@@ -44,10 +44,11 @@ const SpectrumVisualizer: React.FC = () => {
             use_gpu: useGpu,
           },
         });
+        const data = res.data as { frequencies?: number[]; magnitudes?: number[]; timestamp?: number };
         setSpectrumData({
-          frequencies: res.data.frequencies || [],
-          magnitudes: res.data.magnitudes || [],
-          timestamp: res.data.timestamp || 0,
+          frequencies: data.frequencies || [],
+          magnitudes: data.magnitudes || [],
+          timestamp: data.timestamp || 0,
         });
       } catch (err) {
         // ignore transient errors
@@ -61,7 +62,8 @@ const SpectrumVisualizer: React.FC = () => {
   const fetchDevices = async () => {
     try {
       const res = await apiClient.get('/signals/devices');
-      const list = (res.data?.devices || []) as any[];
+      const data = res.data as { devices?: any[] };
+      const list = data.devices || [];
       setDevices(list);
       if (!selectedDevice && list.length > 0) {
         setSelectedDevice(list[0].device_id);

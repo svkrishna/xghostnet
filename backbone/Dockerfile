@@ -19,10 +19,8 @@ RUN apt-get update && apt-get install -y \
     libairspy-dev \
     libairspyhf-dev \
     libbladerf-dev \
-    libhackrf-dev \
     liblimesuite-dev \
     libsoapysdr-dev \
-    libsdrplay-dev \
     libuhd-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,12 +28,12 @@ RUN apt-get update && apt-get install -y \
 COPY backbone/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Set working directory
-WORKDIR /app/backbone/src
+# Set working directory at repo root inside container
+WORKDIR /app
 
-# Copy application code
-COPY . .
+# Copy repository
+COPY . /app
 
 # Run the application
 EXPOSE 8000
-CMD ["python3", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "uvicorn", "backbone.src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

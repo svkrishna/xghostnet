@@ -65,7 +65,8 @@ const GeolocationMap: React.FC = () => {
   const fetchReceivers = useCallback(async () => {
     try {
       const res = await apiClient.get('/signals/devices');
-      setReceivers(res.data?.devices || []);
+      const data = res.data as { devices?: any[] };
+      setReceivers(data.devices || []);
     } catch (err) {
       setReceivers([]);
     }

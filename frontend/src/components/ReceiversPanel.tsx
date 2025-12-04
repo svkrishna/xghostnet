@@ -11,7 +11,7 @@ interface DeviceRow {
   sample_rate?: number;
   bandwidth?: number;
   receiver_velocity?: { vx?: number; vy?: number; vz?: number };
-  receiver_position?: { lat?: number; lon?: number; alt_m?: number };
+  receiver_position?: { lat?: number; lon?: number; alt_m?: number; alt_units?: 'm'|'ft' };
 }
 
 const ReceiversPanel: React.FC = () => {
@@ -26,7 +26,8 @@ const ReceiversPanel: React.FC = () => {
     setLoading(true);
     try {
       const res = await apiClient.get('/signals/devices');
-      setRows(res.data?.devices || []);
+      const data = res.data as { devices?: DeviceRow[] };
+      setRows(data.devices || []);
     } finally {
       setLoading(false);
     }
@@ -36,7 +37,7 @@ const ReceiversPanel: React.FC = () => {
     load();
   }, []);
 
-  const updateCell = (idx: number, path: string[], value: number) => {
+  const updateCell = (idx: number, path: string[], value: number | string) => {
     setRows(prev => {
       const next = [...prev];
       const row = { ...next[idx] } as any;
@@ -83,9 +84,9 @@ const ReceiversPanel: React.FC = () => {
       receiver_position: r.receiver_position,
     }));
     const validate = await apiClient.post('/signals/devices/bulk/validate', payload);
-    const rep = validate.data;
+    const rep = validate.data as { summary?: { ok?: number; errors?: number; total?: number }, report?: any[] };
     setValidateReport(rep);
-    if (rep?.summary?.errors > 0) {
+    if ((rep?.summary?.errors ?? 0) > 0) {
       setValidateOpen(true);
       return;
     }
@@ -95,6 +96,7 @@ const ReceiversPanel: React.FC = () => {
   };
 
   return (
+    <>
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h6">Receivers</Typography>
@@ -265,6 +267,7 @@ const ReceiversPanel: React.FC = () => {
         <Button onClick={() => setValidateOpen(false)}>Close</Button>
       </DialogActions>
     </Dialog>
+    </>
   );
 };
 

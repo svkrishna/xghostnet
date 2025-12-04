@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
 import time
 
-from ..core.signal_geolocator import SignalGeolocator, SignalFingerprint
+from ...core.signal_geolocator import SignalGeolocator, SignalFingerprint
 from ..core.security import SecurityManager
 
 router = APIRouter(prefix="/geolocation", tags=["geolocation"])

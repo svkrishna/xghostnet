@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ghostnet:
     build:
@@ -16,7 +14,7 @@ services:
       - /var/run/udev:/var/run/udev:ro  # udev access for device management
     ports:
       - "8000:8000"  # Web interface
-      - "5000:5000"  # Mesh networking
+      - "5500:5000"  # Mesh networking (host 5500 to avoid conflicts)
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=UTC
@@ -33,7 +31,7 @@ services:
           cpus: '1'
           memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

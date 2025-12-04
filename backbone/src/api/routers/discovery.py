@@ -13,7 +13,7 @@ async def register_device_discovery(
 ):
     """Register a device for discovery."""
     try:
-        from ..core.signal_classifier import SignalClassifier
+        from ...core.signal_classifier import SignalClassifier
         classifier = SignalClassifier()
         classifier.network_manager.register_device(name, port, properties)
         return {"status": "success", "message": "Device registered"}
@@ -27,7 +27,7 @@ async def connect_to_device_discovery(
 ):
     """Connect to a discovered device."""
     try:
-        from ..core.signal_classifier import SignalClassifier
+        from ...core.signal_classifier import SignalClassifier
         classifier = SignalClassifier()
         device = classifier.network_manager.get_discovered_devices().get(device_name)
         if not device:

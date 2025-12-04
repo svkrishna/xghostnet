@@ -18,7 +18,8 @@ const Login: React.FC = () => {
       const res = await apiClient.post('/auth/token', form, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      const token = res.data?.access_token;
+      const data = res.data as { access_token?: string };
+      const token = data.access_token;
       if (token) {
         localStorage.setItem('ghostnet_token', token);
         window.location.reload();

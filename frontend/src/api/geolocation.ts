@@ -10,7 +10,7 @@ export interface KnownDevice {
 
 export async function fetchKnownDevices(): Promise<KnownDevice[]> {
   const res = await apiClient.get('/geolocation/devices');
-  const data = res.data;
+  const data = res.data as { status?: string; devices?: KnownDevice[] };
   if (data && data.status === 'success' && Array.isArray(data.devices)) {
     return data.devices as KnownDevice[];
   }
